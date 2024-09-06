@@ -11,6 +11,10 @@ from skimage.segmentation import watershed
 from skimage.feature import peak_local_max
 from scipy import ndimage as ndi
 
+import base64
+import json
+import requests
+
 
 
 def filter_small_contours(im):
@@ -74,87 +78,6 @@ def save_tif_coregistered(filename, image, poly, channels=1, factor=1):
 
     return True
 
-
-def register_image_pair(image_before, image_after):
-    f_image_after = image_after.copy()
-    image_before, image_after = np.array(image_before)/255.0, np.array(image_after)/255.0
-
-    image_before = np.transpose(image_before, (2,0,1))
-    image_after = np.transpose(image_after, (2,0,1))
-
-    extractor = SuperPoint(max_num_keypoints=2048).eval()#.cuda()  # load the extractor
-    matcher = LightGlue(features='superpoint').eval()#.cuda()  # load the matcher
-
-    feats1 = extractor.extract(torch.from_numpy(image_before).float())  # auto-resize the image, disable with resize=None
-    feats0 = extractor.extract(torch.from_numpy(image_after).float())
-
-
-    matches01 = matcher({'image0': feats0, 'image1': feats1})
-    feats0, feats1, matches01 = [rbd(x) for x in [feats0, feats1, matches01]]  # remove batch dimension
-    matches = matches01['matches']  # indices with shape (K,2)
-    points0 = feats0['keypoints'][matches[..., 0]]  # coordinates in image #0, shape (K,2)
-    points1 = feats1['keypoints'][matches[..., 1]]  # coordinates in image #1, shape (K,2)
-
-    height, width = image_before.shape[1:]
-
-    img2_color = np.moveaxis(image_after, 0, -1)
-
-    height, width = image_before.shape[1:]
-
-    homography, mask = cv2.estimateAffine2D(points0.numpy(), points1.numpy(), cv2.RANSAC)
-    homography = homography.astype(np.float32)
-
-############################check################################################
-    if not (
-        (np.abs(homography)[1][0] + np.abs(homography)[0][1] < 0.02)
-        and (np.abs(homography)[0][0] + np.abs(homography)[1][1] < 2 + 0.01)
-        and (np.abs(homography)[0][0] + np.abs(homography)[1][1] > 2 - 0.01)
-        and len(points0) > 75
-    ):
-          print('WRONG!!!!!!!!!!!!!!!!!!!!!!!!')
-          return f_image_after, False
-          
-############################check################################################
-
-
-    transformed_img = cv2.warpAffine(img2_color, homography, (width, height))
-
-    transformed_img = np.array(transformed_img*255, dtype=np.uint8)
-
-
-    return transformed_img, True
-
-def post_processing(buildings_before, buildings_after):
-#    buildings_before = np.array(buildings_before, dtype=np.uint8)
-#    buildings_after = np.array(buildings_after, dtype=np.uint8)
-
-    diff = buildings_after - buildings_before
-    diff[diff<0]=2
-
-
-#    img_contour = np.zeros((buildings_before.shape[0], buildings_before.shape[1], 3))
-#    intersection = np.logical_and(buildings_before, buildings_after)  
-
-#    idx = np.where(intersection==True)
-#    buildings_after[idx] = 0
-
-#    new_c, hierarchy = cv2.findContours(buildings_after, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-#    cv2.fillPoly(img_contour, new_c, (255, 255, 255))
-
-#    img_contour = np.array(img_contour[:,:,0], dtype=np.uint8)
-
-#    idx255 = np.where(img_contour==255)
-#    img_contour[idx255] = 1
-
-#####################################
-    footprint = disk(4)
-    out = erosion(diff, footprint)
-
-    out = area_opening(out, area_threshold=64, connectivity=1)
-
-    diff[out==0]=0
-    return diff
  
 def visualize(dam):
     dam = np.array(dam, dtype=np.uint8)
@@ -207,3 +130,34 @@ def apply_watershed(label_before, thresh):
 
     return appears
     #cv2.imwrite('appears.png', appears)
+
+
+
+def predict_clouds_for_model(image, bands, test_url_cloud):
+    image = np.moveaxis(image[:bands], 0, -1)
+    image_d = base64.b64encode(np.ascontiguousarray(image.astype(np.float32)))
+
+    response = requests.post(test_url_cloud,json={"image": image_d.decode(), "shape": json.dumps(list(image.shape))})
+
+    if response.ok:
+        response_result = json.loads(response.text)
+        response_result_data = base64.b64decode(response_result["result"])
+        result = np.frombuffer(response_result_data, dtype=np.uint8)
+        cloud_mask = result.reshape(image.shape[:2])
+
+    else:
+        print("error", response)
+        raise ValueError("error wrong response from cloud server")
+    return cloud_mask
+
+    
+
+def get_wms_image_by_id(image_id, creds_mapserver, settings_db):
+    image_broker_url = 'https://maps.orbitaleye.nl/image-broker/products?id={}&_skip=0'.format(image_id)
+    response = requests.get(image_broker_url, auth=(creds_mapserver['username'], creds_mapserver['password']))
+    wms_image = json.loads(response.text)[0]
+
+    with RegionsDb(settings_db) as database:
+        wms_image = database.get_optical_image_by_wms_layer_name(wms_image['wms_layer_name'])
+        
+    return wms_image
