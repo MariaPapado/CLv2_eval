@@ -1,0 +1,15 @@
+1- run /home/maria/research/class_location/app.py for the 2 different dates
+
+2- transfer images to laptop and run /home/mariapap/CODE/CLv2_eval/pipeline.py
+
+3- transfer OUTPUT back to sarccd and run /home/maria/research/class_location/valid_area.py
+
+4- in sarccd run /home/maria/research/class_location/corridor_only.py
+
+5- transfer new OUTPUT back to laptop and run /home/mariapap/CODE/CLv2_eval/projectRegularization/run.py
+
+6- polygon_points2.py
+
+7- write2system
+
+6+7 are combined
