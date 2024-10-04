@@ -2,7 +2,7 @@
 
 2- transfer images to laptop and run /home/mariapap/CODE/CLv2_eval/pipeline.py
 
-3- transfer OUTPUT back to sarccd and run /home/maria/research/class_location/valid_area.py
+3-  run /home/mariapap/CODE/CLv2_eval/valid_area.py
 
 4- in sarccd run /home/maria/research/class_location/corridor_only.py
 
