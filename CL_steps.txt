@@ -6,6 +6,10 @@
 
 4- in sarccd run /home/maria/research/class_location/corridor_only.py
 
+
+5?- run /home/maria/research/class_location/overlapping_polygons.py
+
+
 5- transfer new OUTPUT back to laptop and run /home/mariapap/CODE/CLv2_eval/projectRegularization/run.py
 
 6- polygon_points2.py
