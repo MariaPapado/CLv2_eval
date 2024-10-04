@@ -11,25 +11,28 @@ import json
 from shapely import geometry
 
 
-def save_tif_coregistered(filename, image, poly, channels=1, factor=1):
+def save_tif_coregistered_with_params(filename, image, xparams, poly, channels=1, factor=1):
     height, width = image.shape[0], image.shape[1]
-    geotiff_transform = rasterio.transform.from_bounds(poly.bounds[0], poly.bounds[1],
-                                                       poly.bounds[2], poly.bounds[3],
+    geotiff_transform = rasterio.transform.from_bounds(poly[0], poly[1],
+                                                       poly[2], poly[3],
                                                        width/factor, height/factor)
 
-    new_dataset = rasterio.open(filename, 'w', driver='GTiff',
+    with rasterio.open(filename, 'w', driver='GTiff',
                                 height=height/factor, width=width/factor,
                                 count=channels, dtype='uint8',
                                 crs='+proj=latlong',
-                                transform=geotiff_transform)
+                                transform=geotiff_transform) as dst:
+   # Write bands
+        if channels>1:
+         for ch in range(0, image.shape[2]):
+           dst.write(image[:,:,ch], ch+1)
+        else:
+           dst.write(image, 1)
 
-    # Write bands
-    if channels>1:
-     for ch in range(0, image.shape[2]):
-       new_dataset.write(image[:,:,ch], ch+1)
-    else:
-       new_dataset.write(image, 1)
-    new_dataset.close()
+        dst.update_tags(**xparams)
+#        dst.update_tags(img_id_after='{}'.format(xparams['id_before']))
+        
+    dst.close()
 
     return True
 
@@ -37,8 +40,8 @@ def get_polygons_from_changes(changes, poly, connectivity=4):
 
     height, width = changes.shape[0], changes.shape[1]
     factor=1
-    geotiff_transform = rasterio.transform.from_bounds(poly.bounds[0], poly.bounds[1],
-                                                       poly.bounds[2], poly.bounds[3],
+    geotiff_transform = rasterio.transform.from_bounds(poly[0], poly[1],
+                                                       poly[2], poly[3],
                                                        width/factor, height/factor)
 
 
@@ -50,7 +53,7 @@ def get_polygons_from_changes(changes, poly, connectivity=4):
     return result
 
 
-ids = os.listdir('/home/mariapap/CODE/ChangeOS/MAMBA/MambaCD/PIPELINE_RESULTS_NAT/OUTPUT/')
+ids = os.listdir('./PIPELINE_RESULTS/OUTPUT_incorridor/')
 #ids = ['output_data_region_5999346.tif']
 
 colour_ids = [(0,   0,   0), (0, 255,   0), (255,   0,   0)]  #black, green, red
@@ -58,7 +61,7 @@ colour_ids = [(0,   0,   0), (0, 255,   0), (255,   0,   0)]  #black, green, red
 #ids = ['output_data_region_5996496.tif', 'output_data_region_5996665.tif']
 
 
-with open('./existing_buildings/National-Fuel-2024_buildings.geojson') as f:
+with open('National-Fuel-2024_buildings.geojson') as f:
     sbuilds = json.load(f)
 
 
@@ -80,17 +83,25 @@ for building in sbuilds['features']:
 multipoly_buildings = geometry.MultiPolygon(all_buildings).buffer(0.)
 
 all_polys = []
-
+xparams={}
 for _,id in enumerate(tqdm(ids)):
-    im = rasterio.open('/home/mariapap/CODE/ChangeOS/MAMBA/MambaCD/PIPELINE_RESULTS_NAT/OUTPUT/{}'.format(id))
+    im = rasterio.open('./PIPELINE_RESULTS/OUTPUT_incorridor/{}'.format(id))
+    bounds = im.bounds
+
+    xparams['id_before'] = im.tags()['id_before']
+    xparams['id_after'] = im.tags()['id_after']
+
+    xparams['ctime_before'] = im.tags()['ctime_before']
+    xparams['ctime_after'] = im.tags()['ctime_after']
+
     im = im.read()
     #print(im.shape)
     im = np.transpose(im, (1,2,0))
     rn = [i for i in range(len(id)) if id.startswith('_', i)]
     region_id = id[rn[-1]+1:-4]
-    #print(region_id)
+    print(region_id)
 #    p_file_A = pd.read_pickle('/home/mariapap/CODE/ChangeOS/MAMBA/MambaCD/NatBasemaps/basemaps_natfuel_test/out/A/' + 'data_region_{}.p'.format(region_id))
-    p_file_B = pd.read_pickle('/home/mariapap/CODE/ChangeOS/MAMBA/MambaCD/NatBasemaps/basemaps_natfuel_test/out/B/' + 'data_region_{}.p'.format(region_id))
+   # p_file_B = pd.read_pickle('/home/mariapap/CODE/ChangeOS/MAMBA/MambaCD/NatBasemaps/basemaps_natfuel_test/out/B/' + 'data_region_{}.p'.format(region_id))
 
     im_zeros = np.zeros((im.shape[0], im.shape[1]))
 
@@ -103,12 +114,12 @@ for _,id in enumerate(tqdm(ids)):
 ##########################################################################################################################################
 
     height, width = im.shape[0], im.shape[1]
-    geotiff_transform = rasterio.transform.from_bounds(p_file_B['poly'].bounds[0], p_file_B['poly'].bounds[1],
-                                                       p_file_B['poly'].bounds[2], p_file_B['poly'].bounds[3],
+    geotiff_transform = rasterio.transform.from_bounds(bounds[0], bounds[1],
+                                                       bounds[2], bounds[3],
                                                        width, height)
 ##########################################################################################################################################
 
-    out = get_polygons_from_changes(im_zeros, p_file_B['poly'])
+    out = get_polygons_from_changes(im_zeros, bounds)
 #    print(out)
     if out:
         del_polys = []
@@ -126,11 +137,9 @@ for _,id in enumerate(tqdm(ids)):
     #burned[idx_black]=255
     #print('bbb', burned.shape)
     im = np.array(im, dtype=np.uint8)
-    save_tif_coregistered('./PIPELINE_RESULTS_NAT/OUTPUT_filtered/{}'.format(id), im, p_file_B['poly'], channels=3)
+    save_tif_coregistered_with_params('./PIPELINE_RESULTS/OUTPUT_comparegeojson/{}'.format(id), im, xparams, bounds, channels=3)
 
     im = Image.fromarray(im)
 
-
-    
 
     
