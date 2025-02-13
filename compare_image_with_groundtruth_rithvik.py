@@ -99,9 +99,9 @@ print('fp', sum_fp)
 print('fn', sum_fn)
 print('total', sum_total)
 
-#tp 684
-#fp 69
-#fn 84
+#tp 675
+#fp 82
+#fn 93
 #total 768
 #builds_pred2 = predict_buildings(target_img_2, test_url_mamba_cl)
 
